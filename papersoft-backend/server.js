@@ -5,16 +5,16 @@ const cors = require("cors");
 
 const app = express();
 
-// ===============================
+// ========================================
 // MIDDLEWARES
-// ===============================
+// ========================================
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-// ===============================
-// CONEXIÓN MYSQL AIVEN
-// Configurar estas variables en Render
-// ===============================
+// ========================================
+// CONEXIÓN A AIVEN MYSQL
+// Variables configuradas en Render
+// ========================================
 const conexion = mysql.createConnection({
   host: process.env.DB_HOST,
   port: Number(process.env.DB_PORT || 22812),
@@ -22,15 +22,15 @@ const conexion = mysql.createConnection({
   password: process.env.DB_PASS,
   database: process.env.DB_NAME,
   ssl: {
-    ca: process.env.DB_SSL_CA || undefined,
+    ca: process.env.DB_SSL_CA,
     rejectUnauthorized: true
   },
   connectTimeout: 20000
 });
 
-// ===============================
-// VERIFICAR CONEXIÓN
-// ===============================
+// ========================================
+// CONECTAR Y CREAR TABLA
+// ========================================
 conexion.connect((error) => {
   if (error) {
     console.error("❌ Error MySQL:", error.message);
@@ -39,7 +39,6 @@ conexion.connect((error) => {
 
   console.log("✅ MySQL conectado correctamente a Aiven");
 
-  // Crear la tabla si todavía no existe
   const sqlTabla = `
     CREATE TABLE IF NOT EXISTS productos (
       id_producto INT AUTO_INCREMENT PRIMARY KEY,
@@ -64,9 +63,9 @@ conexion.connect((error) => {
   });
 });
 
-// ===============================
+// ========================================
 // RUTA PRINCIPAL
-// ===============================
+// ========================================
 app.get("/", (req, res) => {
   res.json({
     mensaje: "Servidor PaperSoft funcionando",
@@ -74,15 +73,20 @@ app.get("/", (req, res) => {
   });
 });
 
-// ===============================
-// OBTENER PRODUCTOS
-// ===============================
+// ========================================
+// CONSULTAR TODOS LOS PRODUCTOS
+// ========================================
 app.get("/productos", (req, res) => {
-  const sql = "SELECT * FROM productos ORDER BY id_producto DESC";
+  const sql = `
+    SELECT *
+    FROM productos
+    ORDER BY id_producto DESC
+  `;
 
   conexion.query(sql, (error, resultados) => {
     if (error) {
       console.error("❌ Error al consultar productos:", error.message);
+
       return res.status(500).json({
         mensaje: "Error al consultar productos"
       });
@@ -92,9 +96,9 @@ app.get("/productos", (req, res) => {
   });
 });
 
-// ===============================
+// ========================================
 // AGREGAR PRODUCTO
-// ===============================
+// ========================================
 app.post("/agregar", (req, res) => {
   const {
     nombre_producto,
@@ -119,36 +123,35 @@ app.post("/agregar", (req, res) => {
     VALUES (?, ?, ?, ?)
   `;
 
-  conexion.query(
-    sql,
-    [nombre_producto, precio, stock, categoria || null],
-    (error, resultado) => {
-      if (error) {
-        console.error("❌ Error al agregar:", error.message);
-        return res.status(500).json({
-          mensaje: "Error al agregar producto"
-        });
-      }
+  const valores = [
+    nombre_producto,
+    Number(precio),
+    Number(stock),
+    categoria || null
+  ];
 
-      res.status(201).json({
-        mensaje: "Producto agregado correctamente",
-        id_producto: resultado.insertId
+  conexion.query(sql, valores, (error, resultado) => {
+    if (error) {
+      console.error("❌ Error al agregar producto:", error.message);
+
+      return res.status(500).json({
+        mensaje: "Error al guardar producto",
+        error: error.message
       });
     }
-  );
+
+    res.status(201).json({
+      mensaje: "Producto agregado correctamente",
+      id_producto: resultado.insertId
+    });
+  });
 });
 
-// ===============================
+// ========================================
 // EDITAR PRODUCTO
-// ===============================
+// ========================================
 app.put("/editar/:id", (req, res) => {
   const id = Number(req.params.id);
-
-  if (!Number.isInteger(id) || id <= 0) {
-    return res.status(400).json({
-      mensaje: "ID de producto no válido"
-    });
-  }
 
   const {
     nombre_producto,
@@ -158,12 +161,14 @@ app.put("/editar/:id", (req, res) => {
   } = req.body;
 
   if (
+    !Number.isInteger(id) ||
+    id <= 0 ||
     !nombre_producto ||
     precio === undefined ||
     stock === undefined
   ) {
     return res.status(400).json({
-      mensaje: "Nombre, precio y stock son obligatorios"
+      mensaje: "Datos del producto no válidos"
     });
   }
 
@@ -176,33 +181,38 @@ app.put("/editar/:id", (req, res) => {
     WHERE id_producto = ?
   `;
 
-  conexion.query(
-    sql,
-    [nombre_producto, precio, stock, categoria || null, id],
-    (error, resultado) => {
-      if (error) {
-        console.error("❌ Error al editar:", error.message);
-        return res.status(500).json({
-          mensaje: "Error al actualizar producto"
-        });
-      }
+  const valores = [
+    nombre_producto,
+    Number(precio),
+    Number(stock),
+    categoria || null,
+    id
+  ];
 
-      if (resultado.affectedRows === 0) {
-        return res.status(404).json({
-          mensaje: "Producto no encontrado"
-        });
-      }
+  conexion.query(sql, valores, (error, resultado) => {
+    if (error) {
+      console.error("❌ Error al editar producto:", error.message);
 
-      res.json({
-        mensaje: "Producto actualizado correctamente"
+      return res.status(500).json({
+        mensaje: "Error al editar producto"
       });
     }
-  );
+
+    if (resultado.affectedRows === 0) {
+      return res.status(404).json({
+        mensaje: "Producto no encontrado"
+      });
+    }
+
+    res.json({
+      mensaje: "Producto actualizado correctamente"
+    });
+  });
 });
 
-// ===============================
+// ========================================
 // ELIMINAR PRODUCTO
-// ===============================
+// ========================================
 app.delete("/eliminar/:id", (req, res) => {
   const id = Number(req.params.id);
 
@@ -216,7 +226,8 @@ app.delete("/eliminar/:id", (req, res) => {
 
   conexion.query(sql, [id], (error, resultado) => {
     if (error) {
-      console.error("❌ Error al eliminar:", error.message);
+      console.error("❌ Error al eliminar producto:", error.message);
+
       return res.status(500).json({
         mensaje: "Error al eliminar producto"
       });
@@ -234,9 +245,9 @@ app.delete("/eliminar/:id", (req, res) => {
   });
 });
 
-// ===============================
+// ========================================
 // INICIAR SERVIDOR
-// ===============================
+// ========================================
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
